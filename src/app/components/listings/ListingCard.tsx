@@ -10,6 +10,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import qs from 'query-string';
 import { useSearchParams } from 'next/navigation';
+import { hrefForListing } from "@/app/libs/links";
+import useCountries from "@/app/hooks/useCountries";
+
+import { CountrySelectValue } from '../inputs/CountrySelect';
 
 import {
   SafeListing,
@@ -33,6 +37,7 @@ import Button from "../Button";
 interface ListingCardProps {
   data: SafeListing & { user: SafeUser }; // 👈 Add `user` to data
   reservation?: SafeReservation;
+  locationValue: string;
   onAction?: (id: string) => void;
   disabled?: boolean;
   actionLabel?: string;
@@ -43,6 +48,7 @@ interface ListingCardProps {
 const ListingCard: React.FC<ListingCardProps> = ({
   data,
   reservation,
+  locationValue,
   onAction,
   disabled,
   actionLabel,
@@ -50,6 +56,9 @@ const ListingCard: React.FC<ListingCardProps> = ({
   currentUser,
 }) => {
   const router = useRouter();
+  const { getByValue, getPopularCities } = useCountries();
+  const location = getByValue(locationValue) as CountrySelectValue | undefined;
+  
   const [reviews, setReviews] = useState<{
     rating: number;
     comment: string;
@@ -61,12 +70,19 @@ const ListingCard: React.FC<ListingCardProps> = ({
   const params = useSearchParams();
 
   const listingHref = useMemo(() => {
-  const current = params ? qs.parse(params.toString()) : {};
-  return qs.stringifyUrl(
-    { url: `/listings/${data.id}`, query: current },
-    { skipNull: true, skipEmptyString: true }
-  );
-}, [params, data.id]);
+    const current = params ? qs.parse(params.toString()) : {};
+    const baseUrl = hrefForListing(data);
+    return qs.stringifyUrl(
+      { url: baseUrl, query: current },
+      { skipNull: true, skipEmptyString: true }
+    );
+  }, [
+    params,
+    data.id,
+    data.slug,
+    data.primaryCategory,
+    JSON.stringify(data.category ?? [])
+  ]);
 
   const [isHovered, setIsHovered] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -155,6 +171,65 @@ const ListingCard: React.FC<ListingCardProps> = ({
   const price = useMemo(() => {
     return reservation ? reservation.totalPrice : data.price;
   }, [reservation, data.price]);
+
+  const primaryCategory = useMemo(() => {
+    if (Array.isArray(data.category)) {
+      return data.category[0];
+    }
+
+    return data.category;
+  }, [data.category]);
+
+  const popularCities = useMemo(() => getPopularCities(), [getPopularCities]);
+
+  const locationData = useMemo(() => {
+    if (!data.locationValue) {
+      return null;
+    }
+
+    const directMatch = getByValue(data.locationValue);
+    if (directMatch) {
+      return directMatch;
+    }
+
+    return popularCities.find((city) => city.value === data.locationValue) ?? null;
+  }, [data.locationValue, getByValue, popularCities]);
+
+  const locationCity = useMemo(() => {
+    if (data.locationDescription) {
+      const [firstPart] = data.locationDescription
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+      if (firstPart) {
+        return firstPart;
+      }
+    }
+
+    if (locationData?.city && locationData.city !== 'Unknown') {
+      return locationData.city;
+    }
+
+    return null;
+    
+  }, [data.locationDescription, locationData]);
+
+  const locationLabel = useMemo(() => {
+    const parts: string[] = [];
+
+    // if (locationCity) {
+    //   parts.push(locationCity);
+    // }
+
+    if (locationData?.label) {
+      parts.push(locationData.label);
+    }
+
+    return parts.join(', ');
+  }, [locationCity, locationData]);
+
+  const locationFlag = locationData?.flag;
 
   // const reservationDate = useMemo(() => {
   //   if (!reservation) return null;
@@ -357,13 +432,23 @@ const ListingCard: React.FC<ListingCardProps> = ({
           </div>
         )}
 
-         <div className="flex items-center gap-2 pt-1 text-neutral-500 text-sm">
+        <div className="flex items-center gap-2 pt-1 text-neutral-500 text-sm flex-wrap">
           {reservationDate ? (
             <span>{reservationDate}</span>
           ) : (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full border border-neutral-300 bg-white text-neutral-700 text-xs font-medium tracking-wide">
-              {data.category}
-            </span>
+            <>
+              {primaryCategory && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full border border-neutral-300 bg-white text-neutral-700 text-xs font-medium tracking-wide">
+                  {primaryCategory}
+                </span>
+              )}
+              {locationLabel && (
+                <span className="flex items-center gap-1 text-xs sm:text-sm text-neutral-600 max-w-full">
+                  {locationFlag && <span className="text-base leading-none">{locationFlag}</span>}
+                  <span className="truncate max-w-[200px] sm:max-w-[240px]">{locationLabel}</span>
+                </span>
+              )}
+            </>
           )}
         </div>
 
