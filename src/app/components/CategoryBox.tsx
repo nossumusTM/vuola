@@ -4,19 +4,19 @@ import qs from 'query-string';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { StringifiableRecord } from 'query-string';
 import { useCallback } from 'react';
-import Image from 'next/image';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import type { IconType } from 'react-icons';
 
 interface CategoryBoxProps {
-  icon: string;
+  icon: IconType;
   label: string;
   description: string;
   selected?: boolean;
 }
 
 const CategoryBox: React.FC<CategoryBoxProps> = ({
-  icon,
+  icon: Icon,
   label,
   description,
   selected,
@@ -26,19 +26,19 @@ const CategoryBox: React.FC<CategoryBoxProps> = ({
 
   const handleClick = useCallback(() => {
     const currentQuery: StringifiableRecord = params
-        ? (qs.parse(params.toString()) as StringifiableRecord)
-        : {};
+      ? (qs.parse(params.toString()) as StringifiableRecord)
+      : {};
 
     // build with the category selected
     let nextQuery: StringifiableRecord = {
-        ...currentQuery,
-        category: label,
+      ...currentQuery,
+      category: label,
     };
 
     // if the same category is clicked, remove it immutably (no delete op)
     if (params?.get('category') === label) {
-        const { category: _omit, ...rest } = nextQuery;
-        nextQuery = rest;
+      const { category: _omit, ...rest } = nextQuery;
+      nextQuery = rest;
     }
 
     const url = qs.stringifyUrl({ url: '/', query: nextQuery }, { skipNull: true });
@@ -52,10 +52,10 @@ const CategoryBox: React.FC<CategoryBoxProps> = ({
       aria-pressed={selected}
       title={description}
       className={clsx(
-        'flex w-[100px] h-[100px] aspect-square shrink-0 flex-col items-center justify-between rounded-xl p-2 transition-all duration-300',
+        'flex h-[110px] w-[110px] shrink-0 flex-col items-center justify-between rounded-2xl bg-white p-4 text-neutral-600 shadow-md transition-all duration-300',
         selected
-          ? 'text-neutral-900 shadow-lg shadow-neutral-200/80'
-          : 'text-neutral-700 hover:shadow-md'
+          ? 'text-neutral-900 shadow-xl shadow-neutral-400/60'
+          : 'hover:shadow-lg hover:shadow-neutral-300/50'
       )}
     >
       <motion.div
@@ -69,22 +69,21 @@ const CategoryBox: React.FC<CategoryBoxProps> = ({
           repeat: selected ? Infinity : 0,
           ease: 'easeInOut',
         }}
-        className="flex h-12 w-12 items-center justify-center rounded-lg shadow-sm"
+        className={clsx(
+          'flex h-12 w-12 items-center justify-center rounded-full bg-transparent shadow-md shadow-neutral-300/40',
+          selected && 'shadow-neutral-400/60'
+        )}
         aria-hidden="true"
       >
-        <Image
-          src={icon}
-          alt={label}
-          width={32}
-          height={32}
-          className="h-12 w-12 object-contain"
-          priority={false}
+        <Icon
+          className={clsx('h-7 w-7', selected ? 'text-neutral-900' : 'text-neutral-600')}
+          aria-hidden="true"
         />
       </motion.div>
 
       {/* fixed-height label area so long titles don't resize the tile */}
       <span
-        className="mt-1 block h-10 w-full px-1 text-center text-[10px] font-semibold uppercase leading-tight tracking-wide line-clamp-2 overflow-hidden"
+        className="mt-4 block h-10 w-full px-1 text-center text-[8px] font-semibold uppercase leading-tight tracking-wide text-neutral-700 line-clamp-2 overflow-hidden"
       >
         {label}
       </span>
