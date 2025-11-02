@@ -1,12 +1,11 @@
 'use client';
 
 import axios from 'axios';
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm, FieldValues, SubmitHandler } from 'react-hook-form';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-
 import Modal from './Modal';
 import Input from '../inputs/Input';
 import Heading from '../Heading';
@@ -14,9 +13,19 @@ import ImageUpload from '../inputs/ImageUpload';
 import CountrySelect from '../inputs/CountrySelect';
 import Counter from '../inputs/Counter';
 import CategoryInput from '../inputs/CategoryInput';
-import Select from 'react-select'
+import Select from 'react-select';
+import CreatableSelect from 'react-select/creatable';
+import useCountries from '@/app/hooks/useCountries';
 import { categories } from '../navbar/Categories';
+import CountrySearchSelect, { CountrySearchSelectHandle } from '../inputs/CountrySearchSelect';
 import { SafeUser } from '@/app/types';
+import {
+  ACTIVITY_FORM_OPTIONS,
+  DURATION_OPTIONS,
+  ENVIRONMENT_OPTIONS,
+  GROUP_STYLE_OPTIONS,
+  SEO_KEYWORD_OPTIONS,
+} from '@/app/constants/experienceFilters';
 
 import useExperienceModal from '@/app/hooks/useExperienceModal';
 
@@ -29,6 +38,11 @@ const languageOptions = [
   'English', 'Italian', 'Turkish', 'Russian', 'Español', 'Azerbaijani',
   'Français', 'Polski', 'Українська', 'Nederlands', 'Português', 'Română'
 ].map((lang) => ({ label: lang, value: lang }));
+
+const SearchMap = dynamic(() => import('../SearchMap'), {
+  ssr: false,
+  loading: () => <div className="h-56 md:h-80 w-full rounded-xl bg-neutral-100 animate-pulse" />,
+});
 
 const locationTypeOptions = [
   // {
@@ -195,15 +209,41 @@ const locationTypeOptions = [
   },
 ];
 
+const groupStyleOptions = GROUP_STYLE_OPTIONS.map((option) => ({
+  label: option.label,
+  value: option.value,
+}));
+
+const durationCategoryOptions = DURATION_OPTIONS.map((option) => ({
+  label: option.label,
+  value: option.value,
+}));
+
+const environmentOptions = ENVIRONMENT_OPTIONS.map((option) => ({
+  label: option.label,
+  value: option.value,
+}));
+
+const activityFormOptions = ACTIVITY_FORM_OPTIONS.map((option) => ({
+  label: option.label,
+  value: option.value,
+}));
+
+const seoKeywordOptions = SEO_KEYWORD_OPTIONS.map((option) => ({
+  label: option.label,
+  value: option.value,
+}));
+
 enum STEPS {
   CATEGORY = 0,
   LOCATION = 1,
   INFO1 = 2,
   INFO2 = 3,
   INFO3 = 4,
-  IMAGES = 5,
-  DESCRIPTION = 6,
-  PRICE = 7,
+  FILTERS = 5,
+  IMAGES = 6,
+  DESCRIPTION = 7,
+  PRICE = 8,
 }
 
 const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
@@ -212,6 +252,37 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
 
   const [step, setStep] = useState(STEPS.CATEGORY);
   const [isLoading, setIsLoading] = useState(false);
+
+  const [locationQuery, setLocationQuery] = useState('');
+  const { getAll } = useCountries();
+  const allLocations = getAll();
+
+  const searchInputRef = useRef<CountrySearchSelectHandle | null>(null);
+  const [locationError, setLocationError] = useState(false);
+
+  const locationMatches = useMemo(() => {
+    const q = locationQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allLocations
+      .filter((c: any) => {
+        const hay = [
+          c.label,          // country name
+          c.region,         // region/continent
+          c.city,           // common city (if provided by your hook)
+          c.value,          // country code
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 8);
+  }, [locationQuery, allLocations]);
+
+  const applyLocation = (opt: any) => {
+    setCustomValue('location', opt);
+    setLocationQuery(`${opt.city ? `${opt.city}, ` : ''}${opt.label}`);
+  };
 
 
   const {
@@ -236,6 +307,11 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
       languages: [],
       locationType: [],
       locationDescription: '',
+      groupStyles: [],
+      durationCategory: null,
+      environments: [],
+      activityForms: [],
+      seoKeywords: [],
     }
   });
 
@@ -243,6 +319,11 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
   const location = watch('location');
   const guestCount = watch('guestCount');
   const imageSrc = watch('imageSrc');
+  const groupStyles = watch('groupStyles');
+  const durationCategory = watch('durationCategory');
+  const environments = watch('environments');
+  const activityForms = watch('activityForms');
+  const seoKeywords = watch('seoKeywords');
 
   // const Map = useMemo(
   //   () => dynamic(() => import('../Map'), { ssr: false }),
@@ -261,6 +342,15 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
     });
   };
 
+  useEffect(() => {
+  if (step === STEPS.LOCATION && experienceModal.isOpen) {
+    // give the modal time to render then trigger a resize
+    const id = setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
+    return () => clearTimeout(id);
+  }
+}, [step, experienceModal.isOpen]);
+
+
   const onBack = () => setStep((prev) => prev - 1);
   const onNext = () => setStep((prev) => prev + 1);
 
@@ -274,8 +364,9 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
     }
   
     if (step === STEPS.LOCATION) {
-      if (!location || !location.value) {
-        toast.error('Please select a location.');
+      if (!location?.value) {
+        setLocationError(true);
+        searchInputRef.current?.focus();
         return;
       }
       return onNext();
@@ -308,7 +399,32 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
       }
       return onNext();
     }
-  
+
+    if (step === STEPS.FILTERS) {
+      const selectedGroupStyles = Array.isArray(data.groupStyles) ? data.groupStyles : [];
+      const selectedEnvironments = Array.isArray(data.environments) ? data.environments : [];
+      const selectedActivityForms = Array.isArray(data.activityForms) ? data.activityForms : [];
+      const selectedKeywords = Array.isArray(data.seoKeywords) ? data.seoKeywords : [];
+      const selectedDuration = data.durationCategory;
+
+      if (
+        selectedGroupStyles.length === 0 ||
+        !selectedDuration ||
+        selectedEnvironments.length === 0 ||
+        selectedActivityForms.length === 0
+      ) {
+        toast.error('Please select group style, duration, environment, and activity form.');
+        return;
+      }
+
+      if (selectedKeywords.length < 3) {
+        toast.error('Add at least three SEO keywords or custom tags.');
+        return;
+      }
+
+      return onNext();
+    }
+
     if (step === STEPS.IMAGES) {
       if (!imageSrc || !Array.isArray(imageSrc) || imageSrc.length === 0) {
         toast.error('Please upload at least one image or video.');
@@ -327,12 +443,29 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
   
     if (step === STEPS.PRICE) {
       setIsLoading(true);
-  
+
+      const formatMulti = (value: any) =>
+        Array.isArray(value)
+          ? value
+              .map((item: any) => (typeof item === 'string' ? item : item?.value || item?.label))
+              .filter((item: string) => typeof item === 'string' && item.trim().length > 0)
+          : [];
+
+      const durationValue =
+        typeof data.durationCategory === 'string'
+          ? data.durationCategory
+          : data.durationCategory?.value ?? null;
+
       const submissionData = {
         ...data,
+        groupStyles: formatMulti(data.groupStyles),
+        durationCategory: durationValue,
+        environments: formatMulti(data.environments),
+        activityForms: formatMulti(data.activityForms),
+        seoKeywords: formatMulti(data.seoKeywords),
         status: 'pending',
       };
-  
+
       axios.post('/api/listings', submissionData)
         .then(() => {
           toast.success('Listing submitted for review', {
@@ -394,14 +527,30 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
 
   if (step === STEPS.LOCATION) {
     bodyContent = (
-      <div className="grid grid-cols-1 md:grid-cols-1 gap-3 max-h-[40vh] md:max-h-[60vh] overflow-y-auto pr-1">
-        <Heading title="Where is your event located?" subtitle="Choose a location" />
-        <CountrySelect
+      <div className="grid grid-cols-1 gap-4 max-h-[40vh] md:max-h-[60vh] overflow-y-auto pr-1">
+        {/* <Heading title="Where is your event located?" subtitle="Choose a location" /> */}
+
+        <CountrySearchSelect
+          ref={searchInputRef}
           value={location}
-          onChange={(value) => setCustomValue('location', value)}
+          onChange={(value) => {
+            setCustomValue('location', value);
+            setLocationError(false);
+          }}
+          hasError={locationError}
+          onErrorCleared={() => setLocationError(false)}
         />
-        <div className='pt-5 md:pt-10'>
-        <Map center={location?.latlng} />
+
+        <div className="pt-4">
+          <div className="h-64 md:h-80 w-full overflow-hidden rounded-xl border border-neutral-200">
+            <SearchMap
+              key={`map-${experienceModal.isOpen}-${location?.value ?? 'default'}`}
+              city={location?.city ?? 'Rome'}
+              country={location?.label ?? 'Italy'}
+              center={(location?.latlng as [number, number]) ?? ([41.9028, 12.4964] as [number, number])}
+              // className="h-full w-full"
+            />
+          </div>
         </div>
       </div>
     );
@@ -463,7 +612,7 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
     bodyContent = (
       <div className="flex flex-col gap-8 max-h-[40vh] md:max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
         <Heading title="Languages and location" subtitle="Help guests know what to expect" />
-        
+
         <div className="flex flex-col gap-2">
           <label className="text-md font-medium">Which languages can you provide the experience in?</label>
           <Select
@@ -518,7 +667,92 @@ const ExperienceModal = ({ currentUser }: { currentUser: SafeUser | null }) => {
         />
       </div>
     );
-  }  
+  }
+
+  if (step === STEPS.FILTERS) {
+    bodyContent = (
+      <div className="flex flex-col gap-8 max-h-[40vh] md:max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+        <Heading
+          title="Categorise your listing"
+          subtitle="Match your experience with the right audience and improve discovery."
+        />
+
+        <div className="flex flex-col gap-2">
+          <label className="text-md font-medium">Group style</label>
+          <Select
+            options={groupStyleOptions}
+            value={groupStyles}
+            onChange={(value: any) => setCustomValue('groupStyles', value)}
+            isMulti
+            closeMenuOnSelect={false}
+            styles={{
+              menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+              menu: (base) => ({ ...base, zIndex: 9999 }),
+            }}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-md font-medium">Duration</label>
+          <Select
+            options={durationCategoryOptions}
+            value={durationCategory}
+            onChange={(value: any) => setCustomValue('durationCategory', value)}
+            styles={{
+              menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+              menu: (base) => ({ ...base, zIndex: 9999 }),
+            }}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-md font-medium">Environment</label>
+          <Select
+            options={environmentOptions}
+            value={environments}
+            onChange={(value: any) => setCustomValue('environments', value)}
+            isMulti
+            closeMenuOnSelect={false}
+            styles={{
+              menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+              menu: (base) => ({ ...base, zIndex: 9999 }),
+            }}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-md font-medium">Activity form</label>
+          <Select
+            options={activityFormOptions}
+            value={activityForms}
+            onChange={(value: any) => setCustomValue('activityForms', value)}
+            isMulti
+            closeMenuOnSelect={false}
+            styles={{
+              menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+              menu: (base) => ({ ...base, zIndex: 9999 }),
+            }}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-md font-medium">SEO keywords (pick at least three)</label>
+          <CreatableSelect
+            isMulti
+            options={seoKeywordOptions}
+            value={seoKeywords}
+            onChange={(value: any) => setCustomValue('seoKeywords', value)}
+            placeholder="Select or write your own tags"
+            formatCreateLabel={(inputValue) => `Use "${inputValue}"`}
+            styles={{
+              menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+              menu: (base) => ({ ...base, zIndex: 9999 }),
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (step === STEPS.IMAGES) {
     bodyContent = (
